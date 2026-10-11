@@ -1,0 +1,1 @@
+"""LinguaLite backend application package."""
