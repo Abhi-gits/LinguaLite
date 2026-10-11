@@ -1,5 +1,10 @@
 # LinguaLite
 
+Project documentation:
+
+- [Technical Documentation](./docs/TECHNICAL_DOCUMENTATION.md)
+- [Plain-Language Project Guide](./docs/PROJECT_GUIDE.md)
+
 LinguaLite is a login-free multilingual translation and writing assistant. It runs inference locally through [Ollama](https://ollama.com) by default, with an optional, explicitly configured Gemini API provider. The frontend and backend can be deployed independently.
 
 ## Features
