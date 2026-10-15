@@ -26,7 +26,7 @@ class GrammarService:
     async def correct(self, *, text: str, source_language: str) -> GrammarResult:
         if source_language not in SUPPORTED_LANGUAGES:
             raise TranslationError(
-                "Grammar correction currently supports English and Hindi only.",
+                "Grammar correction does not support the selected language.",
                 status_code=422,
                 code="unsupported_language",
             )

@@ -4,15 +4,16 @@
 
 LinguaLite is a browser-based translation and writing assistant with a React/Vite frontend and a FastAPI backend. The backend can use a local Ollama model by default or an explicitly selected Gemini API provider. The frontend and backend are independently runnable and deployable.
 
-Current supported translation pair: **English ↔ Hindi**. Other language pairs are rejected until they are deliberately added and evaluated. Automatic source detection asks the selected model to identify the input language and accepts only a code in the application registry.
+The language registry contains English, Hindi, Tamil, Telugu, Kannada, Malayalam, Bengali, Marathi, Gujarati, and Punjabi. Every distinct source/target combination is enabled. The eight additional regional languages are marked **early access** and are not independently quality-validated; enabling a pair is not a claim that the configured model has been benchmarked for it. Automatic source detection asks the selected model to identify the input language and accepts only a code in the registry.
 
 ## 2. Feature status and boundaries
 
 | Feature | Current behavior | Important limitation |
 | --- | --- | --- |
-| Translate | English/Hindi, source can be `auto`, target is selected; style is Natural, Formal, Casual, or Literal | Detection uses the configured generative model; it is not a separately benchmarked language detector |
-| Grammar | Corrects spelling and grammar in English or Hindi without a translation task | Model output may still change intended nuance; users should review it before using |
-| Explain | Produces a concise explanation in the selected/detected input language | Explanations are AI-generated, not authoritative linguistic annotation |
+| Translate | Any pair in the ten-language registry, source can be `auto`; style is Natural, Formal, Casual, or Literal | The eight new regional languages are early access; detection and translation are not independently benchmarked for them |
+| India Connect | Drafts a target-language message from a described intent, with audience choice, approximate Latin-letter pronunciation, and a tone note | Model-generated aid; audience is a formality cue, not a guarantee of cultural appropriateness |
+| Grammar | Corrects spelling and grammar in a selected/detected registered language without a translation task | New regional languages are early access; output may change intended nuance |
+| Explain | Produces a concise explanation in the selected/detected registered language | Explanations are AI-generated, not authoritative linguistic annotation |
 | Alternatives | Requests 1–3 alternatives and short nuance labels; exact normalized duplicates of the primary/other variants are removed | Semantic equivalence is instructed, not programmatically proven |
 | Transliterate | Model-generated Hindi conversion between Devanagari and Latin scripts | Colloquial and model-dependent; not deterministic standards-based transliteration |
 | History/export | Browser localStorage stores up to 50 successful results; users can revisit/delete entries, copy output, or download primary output as text | Storage is browser-local, may be removed by browser data clearing, and is not encrypted by the app |
@@ -51,6 +52,7 @@ FastAPI application
 - `backend/app/providers/prompts.py`: shared translation style prompts and output cleanup.
 - `backend/app/services/assistant.py`: task dispatch and response assembly.
 - `backend/app/services/translation.py`: detection, supported-pair checks, translation.
+- `backend/app/services/india_connect.py`: intent-based message draft, pronunciation aid, and audience-aware tone note.
 - `backend/app/services/grammar.py`: same-language grammar correction.
 - `backend/app/services/explanation.py`: separate explanation generation.
 - `backend/app/services/alternatives.py`: alternatives and duplicate filtering.
@@ -112,13 +114,30 @@ Request:
 }
 ```
 
-- `source_language`: `en`, `hi`, or `auto`; defaults to `auto`.
-- `target_language`: required, `en` or `hi`.
+- `source_language`: `en`, `hi`, `ta`, `te`, `kn`, `ml`, `bn`, `mr`, `gu`, `pa`, or `auto`; defaults to `auto`.
+- `target_language`: required; one of the ten listed languages.
 - `style`: `natural`, `formal`, `casual`, or `literal`; defaults to `natural`.
 - `alternatives`: integer 0–3; defaults to 0.
 - `include_explanation`: boolean; defaults to false.
 
 Response fields include `translated_text`, resolved `source_language`, `target_language`, `style`, `provider`, `alternatives` (each with `text` and `nuance`), and optional separate `explanation`.
+Responses include `early_access: true` whenever either language is one of the eight additional regional languages.
+
+#### India Connect
+
+Creates a practical message from a stated intent rather than requiring the user to compose a finished sentence. The selected audience influences formality only; the prompt forbids inventing details or treating cultural guidance as universal.
+
+```json
+{
+  "task": "india_connect",
+  "text": "Ask where the nearest bus stop is.",
+  "source_language": "en",
+  "target_language": "ta",
+  "audience": "service_staff"
+}
+```
+
+`audience` is one of `general`, `friend`, `elder`, `professional`, or `service_staff`. The response contains `translated_text`, `pronunciation_help` (approximate Latin-letter rendering), `tone_guidance`, and `early_access`. The message card's copy/download controls include all three text fields.
 
 #### Grammar
 
@@ -156,11 +175,11 @@ Response contains `explanation` separately; it does not replace or alter the sou
 }
 ```
 
-`source_script` is `auto`, `latin`, or `devanagari`; `target_script` is `latin` or `devanagari`. Both scripts cannot be identical when source script is explicitly supplied. The task is restricted to Hindi.
+`source_script` is `auto`, `latin`, or `devanagari`; `target_script` is `latin` or `devanagari`. Both scripts cannot be identical when source script is explicitly supplied. This separate task remains restricted to Hindi; India Connect provides approximate Latin-letter pronunciation aids for the other target languages.
 
 ### Legacy `POST /api/translate`
 
-Kept for compatibility with earlier frontend/API clients. It accepts `text`, `source_language`, `target_language`, and `mode` (`simple` or `advanced`) and returns `translated_text`, language codes, mode, and provider. New clients should use `/api/assist`.
+Kept for compatibility with earlier frontend/API clients. It accepts `text`, any registered `source_language` and `target_language`, and `mode` (`simple` or `advanced`), and returns `translated_text`, language codes, mode, provider, and `early_access`. New clients should use `/api/assist`.
 
 ### Error responses
 
@@ -186,7 +205,7 @@ Backend settings are read from environment variables or `backend/.env`. Start fr
 | `OLLAMA_MODEL` | `deepseek-r1:latest` | Must exist in Ollama; test language quality yourself |
 | `OLLAMA_TIMEOUT_SECONDS` | `60` | Ollama request timeout |
 | `GEMINI_API_KEY` | empty | Backend-only secret; never put in frontend or a `VITE_` variable |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Must be available to the key/project |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | Must be available to the key/project and support `generateContent` |
 | `GEMINI_TIMEOUT_SECONDS` | `60` | Gemini request timeout |
 | `MAX_TEXT_LENGTH` | `4000` | Configurable 1–4,000 characters |
 | `CORS_ORIGINS` | local Vite origins | Comma-separated allowed browser origins |
@@ -220,7 +239,7 @@ Open `http://127.0.0.1:5173`. Vite proxies API calls to port 8000. For Gemini, s
 
 ### Ollama
 
-Install Ollama, start it, and pull a model. LinguaLite's default tag is `deepseek-r1:latest`; if absent, pull that tag or configure `OLLAMA_MODEL` to an installed compatible model. Model size affects speed and memory. Verify behavior with representative English/Hindi text before using it.
+Install Ollama, start it, and pull a model. LinguaLite's default tag is `deepseek-r1:latest`; if absent, pull that tag or configure `OLLAMA_MODEL` to an installed compatible model. Model size affects speed and memory. Verify behavior for each language pair you plan to use; the eight additional regional languages remain early access.
 
 ## 8. Tests and checks
 
@@ -252,7 +271,7 @@ Backend tests mock model HTTP responses and cover schema validation, provider be
 - Gemini mode sends task text to Google's API. Review current Gemini API pricing, quota, data-use, and retention terms before using sensitive content.
 - The backend does not store history. Browser history resides in localStorage and can be cleared by the user through browser site-data controls.
 - Model output can be wrong, incomplete, biased, or unsafe to rely on in high-stakes settings. Review important results.
-- Do not claim a language/pair is supported until it has been explicitly registered and evaluated with the configured model.
+- The eight additional regional languages are enabled as early access but have not been independently quality-validated. API responses mark these requests with `early_access: true`; verify meaning, names, amounts, tone, and pronunciation with a fluent speaker.
 - Avoid logging API keys, request bodies, or complete user texts. Use secret management and HTTPS for hosted deployments.
 
 ## 11. Research scope
@@ -261,27 +280,27 @@ This section proposes research work; it does not claim that an evaluation has be
 
 ### Research questions
 
-1. How accurate and meaning-preserving are local and hosted model outputs for English↔Hindi across everyday, formal, casual, idiomatic, and technical text?
-2. How often does model-assisted language detection choose the correct registered language, and how does it behave on mixed-language, short, or ambiguous input?
-3. Do Natural, Formal, Casual, and Literal styles create reliably distinguishable register changes without changing factual meaning?
-4. Do alternative translations provide useful nuance rather than duplicates or semantic drift?
-5. How useful and faithful are grammar corrections, explanations, and colloquial transliterations to target users?
-6. What are the latency, memory, privacy, and cost trade-offs between local Ollama models and explicitly configured hosted inference?
+1. How accurate and meaning-preserving are translations for each language pair among English, Hindi, Tamil, Telugu, Kannada, Malayalam, Bengali, Marathi, Gujarati, and Punjabi?
+2. How often does model-assisted detection identify each language correctly, especially for short, mixed-language, or ambiguous input?
+3. Does India Connect preserve a user's stated intent and details, and do audience choices improve message suitability without introducing cultural stereotypes?
+4. Are its Latin-letter pronunciation aids understandable to readers and faithful enough to help with speaking?
+5. Do Natural, Formal, Casual, and Literal styles create reliably distinguishable register changes without changing factual meaning?
+6. Do grammar corrections, explanations, and alternatives remain useful and faithful across scripts and languages?
+7. What are the latency, memory, privacy, and cost trade-offs between local Ollama models and explicitly configured hosted inference?
 
 ### Suggested methodology
 
-- Create a consented, anonymized evaluation set with balanced text categories and documented source/target references. Do not use private production inputs as research data without explicit consent and governance.
-- Use bilingual reviewers for adequacy, fluency, terminology, tone, and meaning preservation; blind reviewers to the model/provider where practical.
-- Measure task-specific outcomes: translation adequacy/fluency and terminology consistency; detection accuracy and abstention; grammar correction precision and meaning preservation; explanation faithfulness; alternative diversity/semantic equivalence; transliteration readability/pronunciation.
+- Create a consented, anonymized evaluation set for each language and direction, including regional-to-regional pairs, with balanced text categories and documented references. Do not use private production inputs without explicit consent and governance.
+- Use reviewers fluent in each language pair for adequacy, fluency, terminology, tone, and meaning preservation; blind reviewers to model/provider where practical.
+- Measure task-specific outcomes: translation adequacy/fluency; detection accuracy and abstention by script; India Connect intent/detail retention and audience suitability; pronunciation-aid usefulness; grammar precision; explanation faithfulness; alternative diversity and semantic equivalence.
 - Record provider/model version, quantization, hardware, prompt/style, input size, latency, failures, and configuration. Do not publish API keys or personal text.
 - Report sample selection, reviewer instructions, disagreements, limitations, and confidence intervals. Automated metrics may supplement, but should not replace, bilingual human review.
 - Benchmark local and hosted routes separately and document the provider's applicable data-use terms. Do not describe a model as “tested” unless the tested version, languages, dataset, and evaluation are reported.
 
 ### Out of scope until separately approved
 
-- Advertising support for additional languages or regional variants without evaluation.
+- Claiming validated quality for an early-access language or pair before evaluation.
 - High-stakes legal, medical, immigration, or official certified translation.
 - User accounts, server-side translation history, collaboration, or cloud synchronization.
 - Training or fine-tuning models on user content.
 - Claims of deterministic transliteration from the current AI transliteration path.
-

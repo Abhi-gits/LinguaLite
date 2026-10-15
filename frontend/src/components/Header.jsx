@@ -13,7 +13,7 @@ export default function Header() {
             <p className="font-serif text-xl font-semibold tracking-tight text-ink">
               LinguaLite
             </p>
-            <p className="text-sm text-muted">Translation &amp; writing assistant</p>
+            <p className="text-sm text-muted">Indian languages &amp; writing assistant</p>
           </div>
         </div>
         <p className="hidden text-sm text-muted sm:block">No account required</p>

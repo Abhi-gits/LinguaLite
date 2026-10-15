@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     ollama_model: str = "deepseek-r1:latest"
     ollama_timeout_seconds: float = 60.0
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
-    gemini_timeout_seconds: float = 60.0
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_timeout_seconds: float = 120.0
 
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

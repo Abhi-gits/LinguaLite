@@ -4,13 +4,16 @@ Project documentation:
 
 - [Technical Documentation](./docs/TECHNICAL_DOCUMENTATION.md)
 - [Plain-Language Project Guide](./docs/PROJECT_GUIDE.md)
+- [Non-technical Project Report (PDF)](./docs/LinguaLite_Project_Report.pdf)
 
-LinguaLite is a login-free multilingual translation and writing assistant. It runs inference locally through [Ollama](https://ollama.com) by default, with an optional, explicitly configured Gemini API provider. The frontend and backend can be deployed independently.
+LinguaLite is a login-free multilingual translation and writing assistant for English, Hindi, and eight Indian regional languages. It runs inference locally through [Ollama](https://ollama.com) by default, with an optional, explicitly configured Gemini API provider. The frontend and backend can be deployed independently.
 
 ## Features
 
-- English-to-Hindi and Hindi-to-English translation with automatic source detection
+- Translation among English, Hindi, Tamil, Telugu, Kannada, Malayalam, Bengali, Marathi, Gujarati, and Punjabi, including direct regional-language pairs
+- Automatic source-language detection for listed languages
 - Natural, Formal, Casual, and Literal translation styles
+- India Connect: describe an intent and get a message for a selected audience, with an approximate pronunciation guide and tone note
 - Separate grammar correction, explanation, alternative translation, and transliteration tasks
 - Up to three alternative translations with concise nuance notes
 - Hindi transliteration between Devanagari and Latin using the configured model
@@ -37,7 +40,7 @@ lingualite/
   frontend/                React + Vite + Tailwind CSS
 ```
 
-Ollama is the default local provider. Gemini can be selected explicitly with `TRANSLATION_PROVIDER=gemini` and a backend-only `GEMINI_API_KEY`. There is **no automatic fallback** between providers. Only English and Hindi translation are registered as supported. Other pairs are rejected; a model's general multilingual ability is not a quality guarantee.
+Ollama is the default local provider. Gemini can be selected explicitly with `TRANSLATION_PROVIDER=gemini` and a backend-only `GEMINI_API_KEY`. There is **no automatic fallback** between providers. All pairs among the ten listed languages are enabled, but the eight additional regional languages are marked **early access** and have not been independently quality-validated. A model's general multilingual ability is not a quality guarantee. Review results with a fluent speaker, especially for important messages.
 
 User text is sent to the configured provider for the duration of a request. It is sent to Google when Gemini is selected. History is stored in browser localStorage and is only submitted to the provider when the user explicitly starts a new task.
 
@@ -82,14 +85,14 @@ VITE_API_BASE_URL=https://api.example.com npm run build
 
 ## Ollama model setup
 
-LinguaLite defaults to **DeepSeek-R1** (`deepseek-r1:latest`), which is already installed in the local Ollama instance used for development. The available Ollama model is an 8.2B Qwen3-family build; model quality should be evaluated for your own English/Hindi translation use.
+LinguaLite defaults to **DeepSeek-R1** (`deepseek-r1:latest`), which is already installed in the local Ollama instance used for development. The available Ollama model is an 8.2B Qwen3-family build; evaluate quality separately for each language pair you plan to use.
 
 ```bash
 ollama serve
 ollama list
 ```
 
-Override the model with `OLLAMA_MODEL` in `backend/.env` if you prefer another installed multilingual model that you have evaluated for English and Hindi. If you change the model, make sure its exact tag appears in `ollama list`.
+Override the model with `OLLAMA_MODEL` in `backend/.env` if you prefer another installed multilingual model that you have evaluated for the language pairs you plan to use. If you change the model, make sure its exact tag appears in `ollama list`.
 
 Confirm Ollama is reachable at `http://127.0.0.1:11434` before translating.
 
@@ -100,7 +103,7 @@ Gemini is opt-in. Keep the API key in the backend environment; never put it in f
 ```dotenv
 TRANSLATION_PROVIDER=gemini
 GEMINI_API_KEY=your-google-ai-studio-api-key
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 GEMINI_TIMEOUT_SECONDS=60
 ```
 
@@ -114,9 +117,10 @@ All requests require `task` and `text`. Task-specific fields:
 
 | Task | Additional fields | Output |
 | --- | --- | --- |
-| `translate` | `source_language` (`en`, `hi`, `auto`), `target_language` (`en`, `hi`), `style` (`natural`, `formal`, `casual`, `literal`), optional `alternatives` (0–3), optional `include_explanation` | `translated_text`, optional structured alternatives and separate explanation |
-| `grammar` | `source_language` (`en`, `hi`, `auto`) | `corrected_text`, concise `changes`; does not translate |
-| `explain` | `source_language` (`en`, `hi`, `auto`) | concise `explanation`; original text is unchanged |
+| `translate` | `source_language` and `target_language` from the ten-language registry (source may be `auto`), `style` (`natural`, `formal`, `casual`, `literal`), optional `alternatives` (0–3), optional `include_explanation` | `translated_text`, optional structured alternatives and separate explanation |
+| `india_connect` | `source_language` (may be `auto`), `target_language`, `audience` (`general`, `friend`, `elder`, `professional`, `service_staff`) | `translated_text`, `pronunciation_help`, `tone_guidance`, `early_access` |
+| `grammar` | `source_language` from the language registry or `auto` | `corrected_text`, concise `changes`; does not translate |
+| `explain` | `source_language` from the language registry or `auto` | concise `explanation`; original text is unchanged |
 | `transliterate` | Hindi `source_language`, `source_script` (`auto`, `latin`, `devanagari`), `target_script` (`latin`, `devanagari`) | `transliterated_text`, separate from translation |
 
 Example:
@@ -133,7 +137,7 @@ Example:
 }
 ```
 
-Automatic language detection uses the selected provider and only accepts a language in the registry. It is model-assisted, not a separately benchmarked language-identification model. The legacy `POST /api/translate` remains available for clients using its `simple`/`advanced` modes.
+Automatic language detection uses the selected provider and only accepts a language in the registry. It is model-assisted, not a separately benchmarked language-identification model. API responses include `early_access: true` when a request uses one of the eight additional, not-yet-validated regional languages. The legacy `POST /api/translate` remains available for clients using its `simple`/`advanced` modes.
 
 ## Legacy translation API
 
@@ -165,8 +169,8 @@ Request:
 | Field | Notes |
 | --- | --- |
 | `text` | Required, 1–4000 characters after trimming |
-| `source_language` | `en` or `hi` |
-| `target_language` | `en` or `hi`, must differ from source |
+| `source_language` | Any registered language |
+| `target_language` | Any registered language, must differ from source |
 | `mode` | `simple` or `advanced` |
 
 Success response:
@@ -177,7 +181,8 @@ Success response:
   "source_language": "en",
   "target_language": "hi",
   "mode": "simple",
-  "provider": "ollama"
+  "provider": "ollama",
+  "early_access": false
 }
 ```
 
@@ -215,7 +220,7 @@ The suite validates request and task schemas, language pairs, styles, detection,
 - By default, text is sent only to the local Ollama process. When Gemini is explicitly selected, translation text is sent to Google's API. Review Google's [Gemini API terms](https://ai.google.dev/gemini-api/terms) and current [pricing/data-use details](https://ai.google.dev/gemini-api/docs/pricing) before sending sensitive text.
 - Output is generated by an AI model and can be inaccurate, incomplete, or biased.
 - The application will not invent a translation when inference fails.
-- English ↔ Hindi is the only registered translation pair. Add languages only after evaluating the configured model and testing the specific pairs.
+- The eight added regional languages are early access, not independently quality-validated. Confirm meaning, register, names, and numbers with a fluent speaker before relying on results.
 
 ## Deployment
 
@@ -242,6 +247,6 @@ The default DeepSeek-R1 model weights are distributed under the [MIT License](ht
 | `OLLAMA_MODEL` | `deepseek-r1:latest` | Installed local Ollama model tag |
 | `OLLAMA_TIMEOUT_SECONDS` | `60` | Inference timeout |
 | `GEMINI_API_KEY` | empty | Backend-only Google AI Studio API key; required only for Gemini |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini API model id |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | Gemini API model id; set this to a model enabled for your key |
 | `GEMINI_TIMEOUT_SECONDS` | `60` | Gemini request timeout |
 | `VITE_API_BASE_URL` | empty (same-origin `/api`) | Frontend API origin for independent deploys |

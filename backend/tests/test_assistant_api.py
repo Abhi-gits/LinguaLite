@@ -165,6 +165,88 @@ def test_assist_transliteration_is_distinct_from_translation() -> None:
     assert "do not translate" in provider.generate.call_args.kwargs["prompt"].lower()
 
 
+def test_assist_india_connect_returns_message_pronunciation_and_tone() -> None:
+    client, provider = _app_client()
+    provider.generate = AsyncMock(
+        return_value=(
+            '{"message":"வணக்கம், பேருந்து நிறுத்தம் எங்கே என்று சொல்ல முடியுமா?",'
+            '"pronunciation_help":"Vanakkam, perundhu niruththam enge endru solla mudiyuma?",'
+            '"tone_guidance":"A polite request addressed to service staff."}'
+        )
+    )
+
+    with client:
+        response = client.post(
+            "/api/assist",
+            json={
+                "task": "india_connect",
+                "text": "Ask where the bus stop is.",
+                "source_language": "en",
+                "target_language": "ta",
+                "audience": "service_staff",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["task"] == "india_connect"
+    assert payload["translated_text"].startswith("வணக்கம்")
+    assert payload["pronunciation_help"].startswith("Vanakkam")
+    assert payload["tone_guidance"]
+    assert payload["early_access"] is True
+    assert "Tamil" in provider.generate.call_args.kwargs["prompt"]
+    assert "service worker" in provider.generate.call_args.kwargs["prompt"]
+
+
+def test_assist_india_connect_auto_detects_regional_source_language() -> None:
+    client, provider = _app_client()
+    provider.generate = AsyncMock(
+        side_effect=[
+            "ta",
+            (
+                '{"message":"Good morning.",'
+                '"pronunciation_help":"Good morning.",'
+                '"tone_guidance":"A neutral greeting."}'
+            ),
+        ]
+    )
+
+    with client:
+        response = client.post(
+            "/api/assist",
+            json={
+                "task": "india_connect",
+                "text": "காலை வணக்கம்",
+                "source_language": "auto",
+                "target_language": "en",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["source_language"] == "ta"
+    assert response.json()["early_access"] is True
+    assert provider.generate.await_count == 2
+
+
+def test_assist_india_connect_malformed_result_is_not_returned_as_success() -> None:
+    client, provider = _app_client()
+    provider.generate = AsyncMock(return_value="not json")
+
+    with client:
+        response = client.post(
+            "/api/assist",
+            json={
+                "task": "india_connect",
+                "text": "Ask for a glass of water.",
+                "source_language": "en",
+                "target_language": "ml",
+            },
+        )
+
+    assert response.status_code == 502
+    assert response.json()["error"] == "malformed_response"
+
+
 @pytest.mark.parametrize(
     "payload",
     [

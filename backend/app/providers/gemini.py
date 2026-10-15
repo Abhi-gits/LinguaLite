@@ -102,6 +102,14 @@ class GeminiProvider(TranslationProvider):
                 status_code=503,
                 code="provider_configuration",
             )
+        if response.status_code == 404:
+            raise TranslationError(
+                "The configured Gemini model is unavailable or retired. Set GEMINI_MODEL "
+                "to a model that supports generateContent (for example, gemini-3.8-flash) "
+                "and restart the backend.",
+                status_code=503,
+                code="provider_model_unavailable",
+            )
         if response.status_code >= 400:
             raise TranslationError(
                 UNAVAILABLE_MESSAGE,

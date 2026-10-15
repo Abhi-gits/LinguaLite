@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.constants import (
+    EXPERIMENTAL_LANGUAGES,
     MAX_TEXT_LENGTH,
     SUPPORTED_LANGUAGES,
     SUPPORTED_MODES,
@@ -47,6 +48,8 @@ class TranslationRequest(BaseModel):
 
     @model_validator(mode="after")
     def languages_must_differ(self) -> "TranslationRequest":
+        if self.target_language == "auto":
+            raise ValueError("Target language must be selected explicitly.")
         if self.source_language != "auto" and self.source_language == self.target_language:
             raise ValueError("Source and target languages must be different.")
         if (
@@ -54,14 +57,20 @@ class TranslationRequest(BaseModel):
             and (self.source_language, self.target_language) not in SUPPORTED_TRANSLATION_PAIRS
         ):
             raise ValueError(
-                "This language pair is not currently supported. Supported pairs: "
-                "English ↔ Hindi."
+                "This source and target language combination is not currently available."
             )
         return self
 
 
 TranslationStyle = Literal["natural", "formal", "casual", "literal"]
-AssistantTask = Literal["translate", "grammar", "explain", "transliterate"]
+AssistantTask = Literal["translate", "grammar", "explain", "transliterate", "india_connect"]
+IndiaConnectAudience = Literal[
+    "general",
+    "friend",
+    "elder",
+    "professional",
+    "service_staff",
+]
 
 
 class AssistantRequest(BaseModel):
@@ -74,6 +83,7 @@ class AssistantRequest(BaseModel):
     include_explanation: bool = False
     source_script: Literal["auto", "latin", "devanagari"] = "auto"
     target_script: Literal["latin", "devanagari"] | None = None
+    audience: IndiaConnectAudience = "general"
 
     @field_validator("text")
     @classmethod
@@ -109,21 +119,25 @@ class AssistantRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_task_parameters(self) -> "AssistantRequest":
-        if self.task == "translate":
+        if self.task in {"translate", "india_connect"}:
             if self.target_language is None:
-                raise ValueError("A target language is required for translation.")
+                raise ValueError("A target language is required for this task.")
             if self.source_language != "auto":
                 if self.source_language == self.target_language:
                     raise ValueError("Source and target languages must be different.")
                 if (self.source_language, self.target_language) not in SUPPORTED_TRANSLATION_PAIRS:
                     raise ValueError(
-                        "This language pair is not currently supported. "
-                        "LinguaLite currently supports English ↔ Hindi."
+                        "This language pair is not currently available."
                     )
         elif self.alternatives or self.include_explanation:
             raise ValueError(
                 "Alternatives and translation explanations are only available for translation."
             )
+        if self.task == "india_connect" and (self.alternatives or self.include_explanation):
+            raise ValueError("India Connect does not accept translation-only options.")
+
+        if self.task != "india_connect" and self.audience != "general":
+            raise ValueError("Audience options are only available for India Connect.")
 
         if self.task == "transliterate":
             if self.source_language != "hi" or self.target_script is None:
@@ -157,6 +171,18 @@ class AssistantResponse(BaseModel):
     source_script: str | None = None
     target_script: str | None = None
     note: str | None = None
+    pronunciation_help: str | None = None
+    tone_guidance: str | None = None
+    early_access: bool = False
+
+    @model_validator(mode="after")
+    def mark_early_access_languages(self) -> "AssistantResponse":
+        self.early_access = any(
+            language in EXPERIMENTAL_LANGUAGES
+            for language in (self.source_language, self.target_language)
+            if language is not None
+        )
+        return self
 
 
 class TranslationResponse(BaseModel):
@@ -165,6 +191,15 @@ class TranslationResponse(BaseModel):
     target_language: str
     mode: str
     provider: str
+    early_access: bool = False
+
+    @model_validator(mode="after")
+    def mark_early_access_languages(self) -> "TranslationResponse":
+        self.early_access = (
+            self.source_language in EXPERIMENTAL_LANGUAGES
+            or self.target_language in EXPERIMENTAL_LANGUAGES
+        )
+        return self
 
 
 class ErrorResponse(BaseModel):

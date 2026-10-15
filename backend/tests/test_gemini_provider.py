@@ -133,6 +133,27 @@ async def test_invalid_key_is_reported_without_echoing_key() -> None:
 
 
 @pytest.mark.asyncio
+async def test_retired_model_error_is_reported_with_recovery_guidance() -> None:
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            404,
+            json={
+                "error": {
+                    "status": "NOT_FOUND",
+                    "message": "This model is no longer available to new users.",
+                }
+            },
+        )
+
+    with pytest.raises(TranslationError) as exc:
+        await _translate_with(handler)
+
+    assert exc.value.code == "provider_model_unavailable"
+    assert "GEMINI_MODEL" in exc.value.message
+    assert "gemini-3.8-flash" in exc.value.message
+
+
+@pytest.mark.asyncio
 async def test_malformed_response_does_not_invent_translation() -> None:
     async def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"candidates": []})

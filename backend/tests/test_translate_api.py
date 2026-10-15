@@ -30,6 +30,7 @@ def test_translate_success(api_client: TestClient, mock_provider: MagicMock) -> 
         "target_language": "hi",
         "mode": "simple",
         "provider": "ollama",
+        "early_access": False,
     }
     mock_provider.translate.assert_awaited_once_with(
         text="Hello",
@@ -55,6 +56,24 @@ def test_translate_passes_advanced_hindi_to_english(
         source_language="hi",
         target_language="en",
         mode="advanced",
+    )
+
+
+def test_translate_allows_regional_pair_and_marks_early_access(
+    api_client: TestClient, mock_provider: MagicMock
+) -> None:
+    response = api_client.post(
+        "/api/translate",
+        json=_payload(text="வணக்கம்", source_language="ta", target_language="gu"),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["early_access"] is True
+    mock_provider.translate.assert_awaited_once_with(
+        text="வணக்கம்",
+        source_language="ta",
+        target_language="gu",
+        mode="simple",
     )
 
 

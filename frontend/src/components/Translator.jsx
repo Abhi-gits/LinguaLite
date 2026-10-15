@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { runAssistant } from '../api'
 import {
   AUTO_LANGUAGE,
+  EXPERIMENTAL_LANGUAGE_CODES,
+  INDIA_CONNECT_AUDIENCES,
   LANGUAGES,
   MAX_TEXT_LENGTH,
   STYLES,
@@ -16,6 +18,10 @@ function languageLabel(code) {
   return LANGUAGES.find((language) => language.code === code)?.label ?? code
 }
 
+function languageOptionLabel(language) {
+  return `${language.label}${language.experimental ? ' — early access' : ''}`
+}
+
 function getResultText(result) {
   return (
     result?.translated_text ??
@@ -24,6 +30,17 @@ function getResultText(result) {
     result?.transliterated_text ??
     ''
   )
+}
+
+function getIndiaConnectCard(result) {
+  if (!result?.translated_text) return ''
+  return [
+    `Message:\n${result.translated_text}`,
+    result.pronunciation_help
+      ? `Approximate pronunciation:\n${result.pronunciation_help}`
+      : '',
+    result.tone_guidance ? `Tone note:\n${result.tone_guidance}` : '',
+  ].filter(Boolean).join('\n\n')
 }
 
 export default function Translator() {
@@ -35,6 +52,7 @@ export default function Translator() {
   const [includeExplanation, setIncludeExplanation] = useState(false)
   const [sourceScript, setSourceScript] = useState('auto')
   const [targetScript, setTargetScript] = useState('latin')
+  const [audience, setAudience] = useState('general')
   const [sourceText, setSourceText] = useState('')
   const [result, setResult] = useState(null)
   const [status, setStatus] = useState('idle')
@@ -61,10 +79,16 @@ export default function Translator() {
   const isTooLong = characterCount > MAX_TEXT_LENGTH
   const canSubmit = sourceText.trim().length > 0 && !isTooLong && status !== 'loading'
   const resultText = getResultText(result)
+  const usesLanguagePair = ['translate', 'india_connect'].includes(task)
+    || ['grammar', 'explain'].includes(task)
+  const needsLanguageReview = EXPERIMENTAL_LANGUAGE_CODES.has(sourceLanguage)
+    || (['translate', 'india_connect'].includes(task)
+      && EXPERIMENTAL_LANGUAGE_CODES.has(targetLanguage))
 
   const outputLabel = useMemo(() => {
     if (status === 'loading') return 'Working…'
     if (task === 'translate') return `Translated ${languageLabel(targetLanguage)}`
+    if (task === 'india_connect') return `Suggested ${languageLabel(targetLanguage)} message`
     if (task === 'grammar') return 'Corrected text'
     if (task === 'explain') return 'Explanation'
     return `${targetScript === 'latin' ? 'Latin' : 'Devanagari'} transliteration`
@@ -117,7 +141,9 @@ export default function Translator() {
     invalidateResult()
   }
 
-  async function handleCopy(text = resultText) {
+  async function handleCopy(
+    text = task === 'india_connect' ? getIndiaConnectCard(result) : resultText,
+  ) {
     if (!text) return
     try {
       await navigator.clipboard.writeText(text)
@@ -129,7 +155,10 @@ export default function Translator() {
 
   function handleDownload() {
     if (!resultText) return
-    const blob = new Blob([resultText], { type: 'text/plain;charset=utf-8' })
+    const downloadText = task === 'india_connect'
+      ? getIndiaConnectCard(result)
+      : resultText
+    const blob = new Blob([downloadText], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -152,14 +181,20 @@ export default function Translator() {
     }
 
     const payload = { task, text: sourceText }
-    if (task === 'translate') {
+    if (task === 'translate' || task === 'india_connect') {
       Object.assign(payload, {
         source_language: sourceLanguage,
         target_language: targetLanguage,
-        style,
-        alternatives: alternativesCount,
-        include_explanation: includeExplanation,
       })
+      if (task === 'translate') {
+        Object.assign(payload, {
+          style,
+          alternatives: alternativesCount,
+          include_explanation: includeExplanation,
+        })
+      } else {
+        payload.audience = audience
+      }
     } else if (task === 'transliterate') {
       Object.assign(payload, {
         source_language: 'hi',
@@ -195,6 +230,7 @@ export default function Translator() {
         includeExplanation,
         sourceScript,
         targetScript,
+        audience,
         result: response,
       }
       saveHistory([entry, ...history].slice(0, 50))
@@ -218,6 +254,7 @@ export default function Translator() {
     setIncludeExplanation(entry.includeExplanation)
     setSourceScript(entry.sourceScript)
     setTargetScript(entry.targetScript)
+    setAudience(entry.audience ?? 'general')
     setResult(entry.result)
     setStatus('success')
     setError('')
@@ -269,7 +306,7 @@ export default function Translator() {
           ) : null}
         </div>
 
-        {task === 'translate' || task === 'grammar' || task === 'explain' ? (
+        {usesLanguagePair ? (
           <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto_1fr]">
             <LanguageSelect
               id="source-language"
@@ -283,7 +320,7 @@ export default function Translator() {
               disabled={status === 'loading'}
               allowAuto
             />
-            {task === 'translate' ? (
+            {task === 'translate' || task === 'india_connect' ? (
               <>
                 <button
                   type="button"
@@ -314,6 +351,42 @@ export default function Translator() {
                   : 'Explanations are kept separate from your original text.'}
               </p>
             )}
+          </div>
+        ) : null}
+
+        {needsLanguageReview && task !== 'transliterate' ? (
+          <p
+            role="status"
+            className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            Regional language support is early access and has not been independently quality-validated.
+            Please review important wording with a fluent speaker.
+          </p>
+        ) : null}
+
+        {task === 'india_connect' ? (
+          <div className="flex flex-col gap-2">
+            <label htmlFor="india-connect-audience" className="text-sm font-medium text-ink">
+              Who are you speaking to?
+            </label>
+            <select
+              id="india-connect-audience"
+              value={audience}
+              disabled={status === 'loading'}
+              onChange={(event) => {
+                setAudience(event.target.value)
+                invalidateResult()
+              }}
+              className="h-11 rounded-xl border border-line bg-surface px-3"
+            >
+              {INDIA_CONNECT_AUDIENCES.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+            <p className="text-sm text-muted">
+              Describe what you want to communicate. LinguaLite drafts a message and provides
+              approximate pronunciation and a tone note.
+            </p>
           </div>
         ) : null}
 
@@ -402,7 +475,11 @@ export default function Translator() {
           <section className="flex min-h-[18rem] flex-col rounded-2xl border border-line bg-surface p-4 shadow-[0_1px_2px_rgba(28,25,23,0.04)]">
             <div className="mb-2 flex items-center justify-between gap-3">
               <label htmlFor="source-text" className="text-sm font-medium text-ink">
-                {task === 'transliterate' ? 'Hindi text' : languageLabel(sourceLanguage)}
+                {task === 'transliterate'
+                  ? 'Hindi text'
+                  : task === 'india_connect'
+                    ? 'What do you want to say?'
+                    : languageLabel(sourceLanguage)}
               </label>
               <p className={`text-sm ${isTooLong ? 'text-danger' : 'text-muted'}`} aria-live="polite">
                 {characterCount.toLocaleString()} / {MAX_TEXT_LENGTH.toLocaleString()}
@@ -417,7 +494,9 @@ export default function Translator() {
               }}
               disabled={status === 'loading'}
               maxLength={MAX_TEXT_LENGTH + 200}
-              placeholder="Enter text to work with"
+              placeholder={task === 'india_connect'
+                ? 'Describe your intention and include important details'
+                : 'Enter text to work with'}
               className="min-h-[14rem] flex-1 resize-y bg-transparent text-base leading-7 text-ink outline-none placeholder:text-stone-400"
               aria-invalid={isTooLong || (!sourceText.trim() && status === 'error')}
               aria-describedby="source-help"
@@ -438,7 +517,7 @@ export default function Translator() {
                   disabled={!resultText}
                   className="rounded-lg px-2 py-1 text-sm font-medium text-accent disabled:text-stone-400"
                 >
-                  {copied ? 'Copied' : 'Copy'}
+                  {copied ? 'Copied' : task === 'india_connect' ? 'Copy message card' : 'Copy'}
                 </button>
                 <button
                   type="button"
@@ -461,6 +540,21 @@ export default function Translator() {
             </div>
             {result?.changes ? <p className="mt-3 text-sm text-muted">{result.changes}</p> : null}
             {result?.note ? <p className="mt-3 text-sm text-muted">{result.note}</p> : null}
+            {task === 'india_connect' && result?.pronunciation_help ? (
+              <div className="mt-4 border-t border-line pt-4">
+                <h3 className="text-sm font-semibold">Approximate pronunciation</h3>
+                <p className="mt-1 whitespace-pre-wrap text-ink">{result.pronunciation_help}</p>
+                <p className="mt-1 text-xs text-muted">
+                  Romanized spelling is a guide; pronunciation and spelling conventions can vary.
+                </p>
+              </div>
+            ) : null}
+            {task === 'india_connect' && result?.tone_guidance ? (
+              <div className="mt-3">
+                <h3 className="text-sm font-semibold">Tone note</h3>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{result.tone_guidance}</p>
+              </div>
+            ) : null}
             {result?.alternatives?.length ? (
               <div className="mt-4 space-y-3 border-t border-line pt-4">
                 <h3 className="text-sm font-semibold">Alternative translations</h3>
@@ -557,7 +651,7 @@ function LanguageSelect({ id, label, value, exclude, onChange, disabled, allowAu
         {allowAuto ? <option value={AUTO_LANGUAGE.code}>{AUTO_LANGUAGE.label}</option> : null}
         {LANGUAGES.map((language) => (
           <option key={language.code} value={language.code} disabled={language.code === exclude}>
-            {language.label}
+            {languageOptionLabel(language)}
           </option>
         ))}
       </select>

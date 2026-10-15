@@ -17,8 +17,7 @@ class TranslationService:
 
         if (source_language, request.target_language) not in SUPPORTED_TRANSLATION_PAIRS:
             raise TranslationError(
-                "The detected or selected language pair is not currently supported. "
-                "LinguaLite currently supports English ↔ Hindi.",
+                "The detected or selected source and target languages must be different.",
                 status_code=422,
                 code="unsupported_language_pair",
             )
@@ -59,8 +58,7 @@ class TranslationService:
         )
         if (resolved_source, target_language) not in SUPPORTED_TRANSLATION_PAIRS:
             raise TranslationError(
-                "This language pair is not currently supported. "
-                "LinguaLite currently supports English ↔ Hindi.",
+                "The detected or selected source and target languages must be different.",
                 status_code=422,
                 code="unsupported_language_pair",
             )
@@ -98,8 +96,8 @@ class TranslationService:
         detected = (await self.provider.generate(prompt=prompt, temperature=0)).strip().lower()
         if detected not in SUPPORTED_LANGUAGES:
             raise TranslationError(
-                "Could not identify a supported source language. Select English or Hindi "
-                "manually, or enter text in one of those languages.",
+                "Could not identify a supported source language. Select a language manually "
+                "or enter text in one of the listed languages.",
                 status_code=422,
                 code="unsupported_source_language",
             )

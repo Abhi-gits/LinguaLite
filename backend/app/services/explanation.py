@@ -25,7 +25,7 @@ class ExplanationService:
     async def explain(self, *, text: str, source_language: str) -> ExplanationResult:
         if source_language not in SUPPORTED_LANGUAGES:
             raise TranslationError(
-                "Explanations currently support English and Hindi only.",
+                "Explanations do not support the selected language.",
                 status_code=422,
                 code="unsupported_language",
             )
